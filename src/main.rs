@@ -1,8 +1,8 @@
 use std::{env, fs};
 
-fn solve(filename: String) {
+fn parse(filename: String) -> Vec<Vec<u64>> {
 	let f = fs::read_to_string(filename).unwrap();
-	let lines = f.lines().map(|line| {
+	let lines = &mut f.lines().map(|line| {
 		line
 			.split('#').next().unwrap()
 			.split(char::is_whitespace)
@@ -11,20 +11,26 @@ fn solve(filename: String) {
 			.collect::<Vec<u64>>()
 	}).filter(|line| line.len() > 0);
 
-	let size = lines.next().unwrap()[0].try_into().unwrap();
+	let sizeline = lines.next().unwrap();
+	assert!(sizeline.len() == 1);
+	let size: u64 = sizeline[0];
+	let u_size: usize = size.try_into().unwrap();
 
-	assert!(lines.count() == size);
-	for line in lines {
-		assert!(line.len() == size);
-		for n in line {
-			print!("-> [{}]", n);
+	let vec: Vec<Vec<u64>> = lines.collect();
+	assert!(vec.len() == u_size);
+
+	for line in &vec {
+		assert!(line.len() == u_size);
+		for x in line {
+			assert!(*x < (size * size));
 		}
-		println!("");
 	}
+
+	vec
 }
 
 fn main() {
 	for arg in env::args().skip(1) {
-		solve(arg);
+		println!("{:?}", parse(arg));
 	}
 }
