@@ -9,6 +9,8 @@ struct State {
 	depth: usize
 }
 
+// TODO avoid clone
+// TODO do not recalculate position of 0
 // TODO remove unwrap... and create better error handling
 
 fn parse(filename: String) -> Puzzle {
@@ -144,13 +146,29 @@ fn expand(puzzle: &Puzzle) -> Vec<Puzzle> {
 	possibles_states
 }
 
-fn print_puzzle(puzzle: &Puzzle) {
-	for row in puzzle {
-		for cell in row {
-			print!(" {:3}", cell);
+fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>) -> Option<(usize, usize)> {
+	let mut pos: Option<(usize, usize)> = None;
+
+	for (y, row) in puzzle.iter().enumerate() {
+		for (x, cell) in row.iter().enumerate() {
+			if *cell == 0 {
+				print!("\x1B[1;91m");
+				pos = Some((x, y));
+			}
+			match previous {
+				Some(prev) => {
+					if x == prev.0 && y == prev.1 {
+						print!("\x1B[1;92m");
+					}
+				}
+				_ => ()
+			}
+			print!(" {:3}\x1B[0m", cell);
 		}
 		println!("");
 	}
+
+	pos
 }
 
 fn reconstruct(map: &HashMap<Puzzle, State>, final_state: &Puzzle) {
@@ -162,11 +180,12 @@ fn reconstruct(map: &HashMap<Puzzle, State>, final_state: &Puzzle) {
 		path.push(state.unwrap().to_vec());
 		state = map.get(state.unwrap()).unwrap().previous.as_ref();
 	}
+	let mut previous: Option<(usize, usize)> = None;
 	for (i, state) in path.iter().rev().enumerate() {
 		println!("step {i}:");
-		print_puzzle(&state);
+		previous = print_puzzle(&state, previous);
 	}
-	println!("Number of moves: {}", path.len());
+	println!("Number of moves                       : {}", path.len());
 }
 
 fn solve(puzzle: Puzzle) {
@@ -183,7 +202,6 @@ fn solve(puzzle: Puzzle) {
 	while opened.len() > 0 {
 		let state = select_best(&opened);
 		let previous = opened.get(&state).unwrap().clone();
-		// println!("-> {:?} -> dist={} depth={} len={}", state, distance(&state), previous.depth, opened.len());
 
 		opened.remove(&state).unwrap();
 		closed.insert(state.clone(), previous.clone());
@@ -192,8 +210,8 @@ fn solve(puzzle: Puzzle) {
 		if distance(&state) == 0 {
 			println!("Solution found");
 			reconstruct(&closed, &state);
-			println!("Maximum number of simultaneous states: {}", max_states);
-			println!("Number of moves evaluated: {}", moves_evaluated);
+			println!("Maximum number of simultaneous states : {}", max_states);
+			println!("Number of moves evaluated             : {}", moves_evaluated);
 			return ;
 		}
 

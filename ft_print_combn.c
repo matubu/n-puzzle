@@ -11,7 +11,6 @@
 /* ************************************************************************** */
 
 #include <unistd.h>
-#include <stdio.h>
 
 int	r(char *b, int i, int c, int first)
 {
@@ -31,8 +30,5 @@ int	main(void)
 
 	i = 0;
 	while (++i < 10)
-	{
-		printf("comb(%d)->\n", i);
 		ft_print_combn(i);
-	}
 }
