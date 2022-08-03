@@ -10,7 +10,7 @@ struct State {
 }
 
 // TODO avoid clone
-// TODO do not recalculate position of 0
+// TODO do not recalculate position of the 0 position
 // TODO remove unwrap... and create better error handling
 
 fn parse(filename: String) -> Puzzle {
@@ -232,9 +232,13 @@ fn solve(puzzle: Puzzle) {
 	println!("No solution");
 }
 
+fn n_puzzle(filename: String) {
+	let puzzle = parse(filename);
+	solve(puzzle);
+}
+
 fn main() {
 	for arg in env::args().skip(1) {
-		let puzzle = parse(arg);
-		solve(puzzle);
+		n_puzzle(arg)
 	}
 }
