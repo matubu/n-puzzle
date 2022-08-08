@@ -1,10 +1,11 @@
 use std::{env, fs};
+use std::rc::Rc;
 use std::collections::HashMap;
 
-type Puzzle = Vec<Vec<usize>>;
+type Puzzle = Rc<Vec<Vec<usize>>>;
 
 #[derive(Clone)]
-struct State {
+struct Node {
 	previous: Option<Puzzle>,
 	depth: usize
 }
@@ -91,11 +92,11 @@ fn distance(state: &Puzzle) -> usize {
 	dist
 }
 
-fn select_best(set: &HashMap<Puzzle, State>) -> Puzzle {
+fn select_best(set: &HashMap<Puzzle, Node>) -> Puzzle {
 	set.iter().min_by_key(|(puzzle, state)|
 		distance(puzzle) * 4
 		+ state.depth
-	).unwrap().0.to_vec()
+	).unwrap().0
 }
 
 // - If puzzle is unsolvable -> inform the user and exit
@@ -117,7 +118,7 @@ fn find_in_puzzle(puzzle: &Puzzle, searched: usize) -> (usize, usize) {
 	panic!("Not found");
 }
 
-fn expand(puzzle: &Puzzle) -> Vec<Puzzle> {
+fn expand(puzzle: Puzzle) -> Vec<Puzzle> {
 	let mut possibles_states = Vec::new();
 	let (tx, ty) = find_in_puzzle(puzzle, 0);
 
@@ -171,14 +172,14 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>) -> Option<(us
 	pos
 }
 
-fn reconstruct(map: &HashMap<Puzzle, State>, final_state: &Puzzle) {
-	let mut state = Some(final_state);
+fn reconstruct(map: &HashMap<Puzzle, Node>, final_state: &Puzzle) {
+	let mut state: Option<&Puzzle> = Some(final_state);
 	let mut path = Vec::<Puzzle>::new();
 
 	println!("Reconstructing...");
 	while state != None {
 		path.push(state.unwrap().to_vec());
-		state = map.get(state.unwrap()).unwrap().previous.as_ref();
+		state = map.get(state.unwrap()).unwrap().previous;
 	}
 	let mut previous: Option<(usize, usize)> = None;
 	for (i, state) in path.iter().rev().enumerate() {
@@ -191,36 +192,40 @@ fn reconstruct(map: &HashMap<Puzzle, State>, final_state: &Puzzle) {
 fn solve(puzzle: Puzzle) {
 	println!("Solving...");
 
-	let mut opened: HashMap<Puzzle, State> = HashMap::new();
-	let mut closed: HashMap<Puzzle, State> = HashMap::new();
+	let mut opened: HashMap<Puzzle, Node> = HashMap::new();
+	let mut closed: HashMap<Puzzle, Node> = HashMap::new();
 
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
 
-	opened.insert(puzzle, State { previous: None, depth: 0 });
+	opened.insert(puzzle, Node { previous: None, depth: 0 });
 
 	while opened.len() > 0 {
 		let state = select_best(&opened);
-		let previous = opened.get(&state).unwrap().clone();
-
-		opened.remove(&state).unwrap();
-		closed.insert(state.clone(), previous.clone());
+		let (state, node) = opened.remove_entry(&state).unwrap();
+		let state_clone = state.clone();
+		closed.insert(state, node).unwrap();
+		let (state, node) = closed.get_key_value(&state_clone).unwrap();
 
 		// Final state
-		if distance(&state) == 0 {
+		if distance(state) == 0 {
 			println!("Solution found");
-			reconstruct(&closed, &state);
+			reconstruct(&closed, state);
 			println!("Maximum number of simultaneous states : {}", max_states);
 			println!("Number of moves evaluated             : {}", moves_evaluated);
 			return ;
 		}
 
-		for next in expand(&state) {
-			if !closed.contains_key(&next)
-				|| (previous.depth + 1 < closed.get(&next).unwrap().depth) {
-				opened.insert(next, State {
-					previous: Some(state.clone()),
-					depth: previous.depth + 1
+		for next in expand(state) {
+			let state_from_opened = opened.get(&next);
+			let state_from_closed = closed.get(&next);
+			let new_depth = node.depth + 1;
+
+			if (state_from_closed.is_none() && (state_from_opened.is_none() || (new_depth < state_from_opened.unwrap().depth)))
+				|| (new_depth < state_from_closed.unwrap().depth) {
+				opened.insert(next, Node {
+					previous: Some(state),
+					depth: new_depth
 				});
 			}
 		}
