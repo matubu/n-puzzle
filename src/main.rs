@@ -1,18 +1,60 @@
 use std::{env, fs};
 use std::rc::Rc;
-use std::collections::HashMap;
+use std::collections::{HashMap, BinaryHeap};
+use std::cmp::Ordering;
 
-type Puzzle = Rc<Vec<Vec<usize>>>;
+type Puzzle = Vec<Vec<usize>>;
 
-#[derive(Clone)]
-struct Node {
-	previous: Option<Puzzle>,
-	depth: usize
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct State {
+	puzzle: Rc<Puzzle>,
+	previous: Option<Rc<Puzzle>>,
+	cost: usize,
+	distance: usize,
+	pos: (usize, usize)
+}
+impl Ord for State {
+    fn cmp(&self, other: &Self) -> Ordering {
+		// (self.cost * 4 + self.distance).cmp(&(other.cost * 4 + other.distance))
+		/*other.cost.cmp(&self.cost)
+			.then_with(|| */other.distance.cmp(&self.distance)/*)
+			.reverse()*/
+    }
+}
+impl PartialOrd for State {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
-// TODO avoid clone
-// TODO do not recalculate position of the 0 position
 // TODO remove unwrap... and create better error handling
+
+fn compute_distance(puzzle: &Puzzle) -> usize {
+	let mut dist: usize = 0;
+
+	for (y, row) in puzzle.iter().enumerate() {
+		for (x, cell) in row.iter().enumerate() {
+			if *cell == 0 {
+				continue ;
+			}
+			let target = get_spiral_position(*cell, puzzle.len());
+			dist += manhattan(target, (x, y));
+		}
+	}
+
+	dist
+}
+
+fn find_empty(puzzle: &Puzzle) -> (usize, usize) {
+	for (y, row) in puzzle.iter().enumerate() {
+		for (x, cell) in row.iter().enumerate() {
+			if *cell == 0 {
+				return (x, y);
+			}
+		}
+	}
+	panic!("Not found");
+}
 
 fn parse(filename: String) -> Puzzle {
 	let f = fs::read_to_string(filename).unwrap();
@@ -76,28 +118,6 @@ fn get_spiral_position(i: usize, n: usize) -> (usize, usize) {
 	(i % n, i / n)
 }
 
-fn distance(state: &Puzzle) -> usize {
-	let mut dist: usize = 0;
-
-	for (y, row) in state.iter().enumerate() {
-		for (x, cell) in row.iter().enumerate() {
-			if *cell == 0 {
-				continue ;
-			}
-			let target = get_spiral_position(*cell, state.len());
-			dist += manhattan(target, (x, y));
-		}
-	}
-
-	dist
-}
-
-fn select_best(set: &HashMap<Puzzle, Node>) -> Puzzle {
-	set.iter().min_by_key(|(puzzle, state)|
-		distance(puzzle) * 4
-		+ state.depth
-	).unwrap().0
-}
 
 // - If puzzle is unsolvable -> inform the user and exit
 
@@ -107,36 +127,32 @@ fn select_best(set: &HashMap<Puzzle, Node>) -> Puzzle {
 // - Number of moves to solve the puzzle
 // - The sequence of states to solve the puzzle
 
-fn find_in_puzzle(puzzle: &Puzzle, searched: usize) -> (usize, usize) {
-	for (y, row) in puzzle.iter().enumerate() {
-		for (x, cell) in row.iter().enumerate() {
-			if *cell == searched {
-				return (x, y);
-			}
-		}
-	}
-	panic!("Not found");
-}
-
-fn expand(puzzle: Puzzle) -> Vec<Puzzle> {
+fn expand(state: Rc<State>) -> Vec<State> {
 	let mut possibles_states = Vec::new();
-	let (tx, ty) = find_in_puzzle(puzzle, 0);
+	let size = (*state).puzzle.len();
 
 	let mut add_state = |ox: isize, oy: isize| {
-		if     (ox < 0 && tx <= 0)
-			|| (oy < 0 && ty <= 0)
-			|| (ox > 0 && tx >= puzzle.len()-1)
-			|| (oy > 0 && ty >= puzzle.len()-1) {
+		let x = (*state).pos.0 as isize + ox;
+		let y = (*state).pos.1 as isize + oy;
+
+		if     (x < 0)
+			|| (y < 0)
+			|| (x >= size as isize)
+			|| (y >= size as isize) {
 			return ;
 		}
-		let x: usize = (tx as isize + ox) as usize;
-		let y: usize = (ty as isize + oy) as usize;
 
-		let mut new_state = puzzle.clone();
-		new_state[ty][tx] = new_state[y][x];
-		new_state[y][x] = 0;
+		let mut new_puzzle = (*state.puzzle).clone();
+		new_puzzle[(*state).pos.1][(*state).pos.0] = new_puzzle[y as usize][x as usize];
+		new_puzzle[y as usize][x as usize] = 0;
 
-		possibles_states.push(new_state);
+		possibles_states.push(State {
+			previous: Some(Rc::clone(&(*state).puzzle)),
+			cost: (*state).cost + 1,
+			distance: compute_distance(&new_puzzle),
+			pos: (x as usize, y as usize),
+			puzzle: Rc::new(new_puzzle)
+		});
 	};
 
 	add_state(-1,  0);
@@ -172,19 +188,19 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>) -> Option<(us
 	pos
 }
 
-fn reconstruct(map: &HashMap<Puzzle, Node>, final_state: &Puzzle) {
-	let mut state: Option<&Puzzle> = Some(final_state);
-	let mut path = Vec::<Puzzle>::new();
+fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>) {
+	let mut curr: Option<Rc<Puzzle>> = Some(final_state);
+	let mut path = Vec::<Rc<Puzzle>>::new();
 
 	println!("Reconstructing...");
-	while state != None {
-		path.push(state.unwrap().to_vec());
-		state = map.get(state.unwrap()).unwrap().previous;
+	while let Some(state) = curr {
+		path.push(state.clone());
+		curr = map.get(&state).unwrap().previous.clone();
 	}
 	let mut previous: Option<(usize, usize)> = None;
 	for (i, state) in path.iter().rev().enumerate() {
 		println!("step {i}:");
-		previous = print_puzzle(&state, previous);
+		previous = print_puzzle(&(*state), previous);
 	}
 	println!("Number of moves                       : {}", path.len());
 }
@@ -192,46 +208,64 @@ fn reconstruct(map: &HashMap<Puzzle, Node>, final_state: &Puzzle) {
 fn solve(puzzle: Puzzle) {
 	println!("Solving...");
 
-	let mut opened: HashMap<Puzzle, Node> = HashMap::new();
-	let mut closed: HashMap<Puzzle, Node> = HashMap::new();
+	let mut heap: BinaryHeap<Rc<State>> = BinaryHeap::new();
+	let mut vis: HashMap<Rc<Puzzle>, Rc<State>> = HashMap::new();
 
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
 
-	opened.insert(puzzle, Node { previous: None, depth: 0 });
+	let start = Rc::new(State {
+		previous: None,
+		cost: 0,
+		distance: compute_distance(&puzzle),
+		pos: find_empty(&puzzle),
+		puzzle: Rc::new(puzzle)
+	});
+	vis.insert(start.puzzle.clone(), start.clone());
+	heap.push(start);
 
-	while opened.len() > 0 {
-		let state = select_best(&opened);
-		let (state, node) = opened.remove_entry(&state).unwrap();
-		let state_clone = state.clone();
-		closed.insert(state, node).unwrap();
-		let (state, node) = closed.get_key_value(&state_clone).unwrap();
-
+	while let Some(state) = heap.pop() {
 		// Final state
-		if distance(state) == 0 {
+		if state.distance == 0 {
 			println!("Solution found");
-			reconstruct(&closed, state);
+			reconstruct(vis, (*state).puzzle.clone());
 			println!("Maximum number of simultaneous states : {}", max_states);
 			println!("Number of moves evaluated             : {}", moves_evaluated);
 			return ;
 		}
 
 		for next in expand(state) {
-			let state_from_opened = opened.get(&next);
-			let state_from_closed = closed.get(&next);
-			let new_depth = node.depth + 1;
-
-			if (state_from_closed.is_none() && (state_from_opened.is_none() || (new_depth < state_from_opened.unwrap().depth)))
-				|| (new_depth < state_from_closed.unwrap().depth) {
-				opened.insert(next, Node {
-					previous: Some(state),
-					depth: new_depth
-				});
+			if vis.contains_key(&next.puzzle) {
+				// if next.cost < (*vis.get(&next.puzzle).unwrap()).cost {
+					// TODO replace
+					// println!("should replace");
+					// *(Rc::get_mut(vis.get_mut(&next.puzzle).unwrap()).unwrap()) = next.clone();
+					// TODO avoid duplicate in heap
+					// heap.push(vis.get(&next.puzzle).unwrap().clone());
+				// }
+				continue ;
 			}
+
+			let rc_next = Rc::new(next);
+
+			vis.insert(rc_next.puzzle.clone(), rc_next.clone());
+			heap.push(rc_next);
+
+	// 		let state_from_opened = opened.get(&next);
+	// 		let state_from_closed = closed.get(&next);
+	// 		let new_depth = node.depth + 1;
+
+	// 		if (state_from_closed.is_none() && (state_from_opened.is_none() || (new_depth < state_from_opened.unwrap().depth)))
+	// 			|| (new_depth < state_from_closed.unwrap().depth) {
+	// 			opened.insert(RefCell::new(next), State {
+	// 				previous: Some(RefCell::clone(state)),
+	// 				depth: new_depth
+	// 			});
+	// 		}
 		}
 
 		moves_evaluated += 1;
-		max_states = max_states.max(opened.len());
+		max_states = max_states.max(vis.len());
 	}
 
 	println!("No solution");
