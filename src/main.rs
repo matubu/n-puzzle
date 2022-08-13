@@ -1,6 +1,8 @@
+#![feature(binary_heap_retain)]
 use std::{env, fs};
 use std::rc::Rc;
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::BinaryHeap;
+use std::collections::HashMap;
 use std::cmp::Ordering;
 
 type Puzzle = Vec<Vec<usize>>;
@@ -15,10 +17,9 @@ struct State {
 }
 impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
-		// (self.cost * 4 + self.distance).cmp(&(other.cost * 4 + other.distance))
-		/*other.cost.cmp(&self.cost)
-			.then_with(|| */other.distance.cmp(&self.distance)/*)
-			.reverse()*/
+		// (other.distance * 3 + other.cost * 2).cmp(&(self.distance * 3 + self.cost * 2))
+		// (other.distance * 2 + other.cost).cmp(&(self.distance * 2 + self.cost))
+		(other.distance + other.cost).cmp(&(self.distance + self.cost))
     }
 }
 impl PartialOrd for State {
@@ -27,17 +28,12 @@ impl PartialOrd for State {
     }
 }
 
-// TODO remove unwrap... and create better error handling
-
-fn compute_distance(puzzle: &Puzzle) -> usize {
+fn compute_distance(puzzle: &Puzzle, goal: &Vec<(usize, usize)>) -> usize {
 	let mut dist: usize = 0;
 
 	for (y, row) in puzzle.iter().enumerate() {
 		for (x, cell) in row.iter().enumerate() {
-			if *cell == 0 {
-				continue ;
-			}
-			let target = get_spiral_position(*cell, puzzle.len());
+			let target = goal[*cell];
 			dist += manhattan(target, (x, y));
 		}
 	}
@@ -53,7 +49,7 @@ fn find_empty(puzzle: &Puzzle) -> (usize, usize) {
 			}
 		}
 	}
-	panic!("Not found");
+	panic!("No empty cell found");
 }
 
 fn parse(filename: String) -> Puzzle {
@@ -97,27 +93,38 @@ fn manhattan(target: (usize, usize), pos: (usize, usize)) -> usize {
 	abs_diff(target.0, pos.0) + abs_diff(target.1, pos.1)
 }
 
-// https://math.stackexchange.com/questions/163080/on-a-two-dimensional-grid-is-there-a-formula-i-can-use-to-spiral-coordinates-in#answer-163101
-// TODO make the subject version of this function
-// Stackoverflow:
-// 16 15 14 13
-//  5  4  3 12
-//  6  1  2 11
-//  7  8  9 10
-// Subject:
-//  1  2  3  4
-// 12 13 14  5
-// 11  0 15  6
-// 10  9  8  7
-// Current:
-//  0  1  2  3
-//  4  5  6  7
-//  8  9 10 11
-// 12 13 14 15
-fn get_spiral_position(i: usize, n: usize) -> (usize, usize) {
-	(i % n, i / n)
-}
+fn build_spiral(n: usize) -> Vec<(usize, usize)> {
+	let mut step_size = n;
+	let mut x: usize = 0;
+	let mut y: usize = 0;
+    let mut ret = Vec::with_capacity(n * n);
 
+    ret.push((if n % 2 == 0 { n / 2 - 1 } else { n / 2 }, n / 2));
+
+	while step_size > 1 {
+        let mut add_line = |dx: isize, dy: isize, line_length: usize| {
+            if ret.len() >= (n * n) {
+                return ;
+            }
+            for _ in 0..line_length-1 {
+                ret.push((x, y));
+                x = (x as isize + dx) as usize;
+                y = (y as isize + dy) as usize;
+            }
+        };
+
+        add_line( 1,  0, step_size);
+        add_line( 0,  1, step_size);
+        add_line(-1,  0, step_size);
+        add_line( 0, -1, step_size);
+
+        step_size -= 2;
+        x += 1;
+        y += 1;
+	}
+
+    ret
+}
 
 // - If puzzle is unsolvable -> inform the user and exit
 
@@ -127,7 +134,7 @@ fn get_spiral_position(i: usize, n: usize) -> (usize, usize) {
 // - Number of moves to solve the puzzle
 // - The sequence of states to solve the puzzle
 
-fn expand(state: Rc<State>) -> Vec<State> {
+fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>) -> Vec<State> {
 	let mut possibles_states = Vec::new();
 	let size = (*state).puzzle.len();
 
@@ -149,7 +156,7 @@ fn expand(state: Rc<State>) -> Vec<State> {
 		possibles_states.push(State {
 			previous: Some(Rc::clone(&(*state).puzzle)),
 			cost: (*state).cost + 1,
-			distance: compute_distance(&new_puzzle),
+			distance: compute_distance(&new_puzzle, goal),
 			pos: (x as usize, y as usize),
 			puzzle: Rc::new(new_puzzle)
 		});
@@ -168,19 +175,18 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>) -> Option<(us
 
 	for (y, row) in puzzle.iter().enumerate() {
 		for (x, cell) in row.iter().enumerate() {
+			print!("\x1B[m");
 			if *cell == 0 {
-				print!("\x1B[1;91m");
+				print!("\x1B[1;91m [0] \x1B[0m");
 				pos = Some((x, y));
+				continue ;
 			}
-			match previous {
-				Some(prev) => {
-					if x == prev.0 && y == prev.1 {
-						print!("\x1B[1;92m");
-					}
+			if let Some(prev) = previous {
+				if x == prev.0 && y == prev.1 {
+					print!("\x1B[1;92m");
 				}
-				_ => ()
 			}
-			print!(" {:3}\x1B[0m", cell);
+			print!(" {:2}\x1B[0m  ", cell);
 		}
 		println!("");
 	}
@@ -199,10 +205,13 @@ fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>) {
 	}
 	let mut previous: Option<(usize, usize)> = None;
 	for (i, state) in path.iter().rev().enumerate() {
-		println!("step {i}:");
+		match i {
+			0 => println!("initial state"),
+			n => println!("step {}:", n)
+		}
 		previous = print_puzzle(&(*state), previous);
 	}
-	println!("Number of moves                       : {}", path.len());
+	println!("Number of moves                       : {}", path.len() - 1);
 }
 
 fn solve(puzzle: Puzzle) {
@@ -214,10 +223,12 @@ fn solve(puzzle: Puzzle) {
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
 
+	let goal = build_spiral(puzzle.len());
+
 	let start = Rc::new(State {
 		previous: None,
 		cost: 0,
-		distance: compute_distance(&puzzle),
+		distance: compute_distance(&puzzle, &goal),
 		pos: find_empty(&puzzle),
 		puzzle: Rc::new(puzzle)
 	});
@@ -225,24 +236,22 @@ fn solve(puzzle: Puzzle) {
 	heap.push(start);
 
 	while let Some(state) = heap.pop() {
+		// Check if it was not replaced
+		if state.cost > (*vis.get(&state.puzzle).unwrap()).cost {
+			continue ;
+		}
+
 		// Final state
 		if state.distance == 0 {
-			println!("Solution found");
+			println!("[ Solution found ]");
 			reconstruct(vis, (*state).puzzle.clone());
 			println!("Maximum number of simultaneous states : {}", max_states);
 			println!("Number of moves evaluated             : {}", moves_evaluated);
 			return ;
 		}
 
-		for next in expand(state) {
-			if vis.contains_key(&next.puzzle) {
-				// if next.cost < (*vis.get(&next.puzzle).unwrap()).cost {
-					// TODO replace
-					// println!("should replace");
-					// *(Rc::get_mut(vis.get_mut(&next.puzzle).unwrap()).unwrap()) = next.clone();
-					// TODO avoid duplicate in heap
-					// heap.push(vis.get(&next.puzzle).unwrap().clone());
-				// }
+		for next in expand(state, &goal) {
+			if vis.contains_key(&next.puzzle) && next.cost >= (*vis.get(&next.puzzle).unwrap()).cost {
 				continue ;
 			}
 
@@ -250,25 +259,13 @@ fn solve(puzzle: Puzzle) {
 
 			vis.insert(rc_next.puzzle.clone(), rc_next.clone());
 			heap.push(rc_next);
-
-	// 		let state_from_opened = opened.get(&next);
-	// 		let state_from_closed = closed.get(&next);
-	// 		let new_depth = node.depth + 1;
-
-	// 		if (state_from_closed.is_none() && (state_from_opened.is_none() || (new_depth < state_from_opened.unwrap().depth)))
-	// 			|| (new_depth < state_from_closed.unwrap().depth) {
-	// 			opened.insert(RefCell::new(next), State {
-	// 				previous: Some(RefCell::clone(state)),
-	// 				depth: new_depth
-	// 			});
-	// 		}
 		}
 
 		moves_evaluated += 1;
-		max_states = max_states.max(vis.len());
+		max_states = max_states.max(heap.len());
 	}
 
-	println!("No solution");
+	println!("[ No solution found ]");
 }
 
 fn n_puzzle(filename: String) {
