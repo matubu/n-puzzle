@@ -18,8 +18,8 @@ struct State {
 impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
 		// (other.distance * 3 + other.cost * 2).cmp(&(self.distance * 3 + self.cost * 2))
-		// (other.distance * 2 + other.cost).cmp(&(self.distance * 2 + self.cost))
-		(other.distance + other.cost).cmp(&(self.distance + self.cost))
+		(other.distance * 2 + other.cost).cmp(&(self.distance * 2 + self.cost))
+		// (other.distance + other.cost).cmp(&(self.distance + self.cost))
     }
 }
 impl PartialOrd for State {
@@ -170,31 +170,42 @@ fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>) -> Vec<State> {
 	possibles_states
 }
 
-fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>) -> Option<(usize, usize)> {
+fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>, goal: &Vec<(usize, usize)>) -> Option<(usize, usize)> {
 	let mut pos: Option<(usize, usize)> = None;
 
 	for (y, row) in puzzle.iter().enumerate() {
 		for (x, cell) in row.iter().enumerate() {
-			print!("\x1B[m");
 			if *cell == 0 {
-				print!("\x1B[1;91m [0] \x1B[0m");
+				print!("\x1B[1;91m [0]\x1B[0m ");
 				pos = Some((x, y));
-				continue ;
-			}
-			if let Some(prev) = previous {
-				if x == prev.0 && y == prev.1 {
-					print!("\x1B[1;92m");
+			} else {
+				if let Some(prev) = previous {
+					if x == prev.0 && y == prev.1 {
+						print!("\x1B[1;92m");
+					}
 				}
+				print!(" {:2}\x1B[0m  ", cell);
 			}
-			print!(" {:2}\x1B[0m  ", cell);
 		}
-		println!("");
+		for (x, cell) in row.iter().enumerate() {
+			match manhattan(goal[*cell], (x, y)) {
+				0 => print!("\x1B[104m"),
+				1 => print!("\x1B[106m"),
+				2 => print!("\x1B[102m"),
+				3 => print!("\x1B[103m"),
+				_ => print!("\x1B[101m"),
+			}
+			print!("  \x1B[0m");
+		}
+		println!("\x1B[0m");
 	}
+	println!("{}     \x1B[1m{}\x1B[0m", "    ".repeat(puzzle.len()), compute_distance(puzzle, goal));
+	println!("");
 
 	pos
 }
 
-fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>) {
+fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>, goal: &Vec<(usize, usize)>) {
 	let mut curr: Option<Rc<Puzzle>> = Some(final_state);
 	let mut path = Vec::<Rc<Puzzle>>::new();
 
@@ -209,7 +220,7 @@ fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>) {
 			0 => println!("initial state"),
 			n => println!("step {}:", n)
 		}
-		previous = print_puzzle(&(*state), previous);
+		previous = print_puzzle(&(*state), previous, &goal);
 	}
 	println!("Number of moves                       : {}", path.len() - 1);
 }
@@ -217,13 +228,18 @@ fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>) {
 fn solve(puzzle: Puzzle) {
 	println!("Solving...");
 
+	let goal = build_spiral(puzzle.len());
+
+	if compute_distance(&puzzle, &goal) % 2 == 1 {
+		println!("[ Impossible puzzle ]");
+		return ;
+	}
+
 	let mut heap: BinaryHeap<Rc<State>> = BinaryHeap::new();
 	let mut vis: HashMap<Rc<Puzzle>, Rc<State>> = HashMap::new();
 
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
-
-	let goal = build_spiral(puzzle.len());
 
 	let start = Rc::new(State {
 		previous: None,
@@ -244,7 +260,7 @@ fn solve(puzzle: Puzzle) {
 		// Final state
 		if state.distance == 0 {
 			println!("[ Solution found ]");
-			reconstruct(vis, (*state).puzzle.clone());
+			reconstruct(vis, (*state).puzzle.clone(), &goal);
 			println!("Maximum number of simultaneous states : {}", max_states);
 			println!("Number of moves evaluated             : {}", moves_evaluated);
 			return ;
