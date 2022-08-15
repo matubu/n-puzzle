@@ -5,6 +5,8 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
+type DistanceFn = fn((usize, usize), (usize, usize)) -> usize;
+
 type Puzzle = Vec<Vec<usize>>;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -17,9 +19,7 @@ struct State {
 }
 impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
-		// (other.distance * 3 + other.cost * 2).cmp(&(self.distance * 3 + self.cost * 2))
-		(other.distance * 2 + other.cost).cmp(&(self.distance * 2 + self.cost))
-		// (other.distance + other.cost).cmp(&(self.distance + self.cost))
+		(other.distance + other.cost).cmp(&(self.distance + self.cost))
     }
 }
 impl PartialOrd for State {
@@ -28,13 +28,23 @@ impl PartialOrd for State {
     }
 }
 
-fn compute_distance(puzzle: &Puzzle, goal: &Vec<(usize, usize)>) -> usize {
+fn manhattan(target: (usize, usize), pos: (usize, usize)) -> usize {
+	abs_diff(target.0, pos.0) + abs_diff(target.1, pos.1)
+}
+fn out_of_place(target: (usize, usize), pos: (usize, usize)) -> usize {
+	if target == pos { 0 } else { 4 }
+}
+fn euclidean(target: (usize, usize), pos: (usize, usize)) -> usize {
+	(abs_diff(target.0, pos.0) << 1) + (abs_diff(target.1, pos.1) << 1)
+}
+
+fn compute_distance(puzzle: &Puzzle, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> usize {
 	let mut dist: usize = 0;
 
 	for (y, row) in puzzle.iter().enumerate() {
 		for (x, cell) in row.iter().enumerate() {
 			let target = goal[*cell];
-			dist += manhattan(target, (x, y));
+			dist += distance_fn(target, (x, y));
 		}
 	}
 
@@ -74,7 +84,7 @@ fn parse(filename: String) -> Puzzle {
 		assert!(line.len() == size);
 		for x in line {
 			assert!(*x < (size * size));
-			// TODO assert duplicate
+			// TODO assert no duplicate
 		}
 	}
 
@@ -87,10 +97,6 @@ fn abs_diff(a: usize, b: usize) -> usize {
 	} else {
 		b - a
 	}
-}
-
-fn manhattan(target: (usize, usize), pos: (usize, usize)) -> usize {
-	abs_diff(target.0, pos.0) + abs_diff(target.1, pos.1)
 }
 
 fn build_spiral(n: usize) -> Vec<(usize, usize)> {
@@ -134,7 +140,7 @@ fn build_spiral(n: usize) -> Vec<(usize, usize)> {
 // - Number of moves to solve the puzzle
 // - The sequence of states to solve the puzzle
 
-fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>) -> Vec<State> {
+fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Vec<State> {
 	let mut possibles_states = Vec::new();
 	let size = (*state).puzzle.len();
 
@@ -156,7 +162,7 @@ fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>) -> Vec<State> {
 		possibles_states.push(State {
 			previous: Some(Rc::clone(&(*state).puzzle)),
 			cost: (*state).cost + 1,
-			distance: compute_distance(&new_puzzle, goal),
+			distance: compute_distance(&new_puzzle, goal, distance_fn),
 			pos: (x as usize, y as usize),
 			puzzle: Rc::new(new_puzzle)
 		});
@@ -170,7 +176,8 @@ fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>) -> Vec<State> {
 	possibles_states
 }
 
-fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>, goal: &Vec<(usize, usize)>) -> Option<(usize, usize)> {
+fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>,
+				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Option<(usize, usize)> {
 	let mut pos: Option<(usize, usize)> = None;
 
 	for (y, row) in puzzle.iter().enumerate() {
@@ -188,7 +195,7 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>, goal: &Vec<(u
 			}
 		}
 		for (x, cell) in row.iter().enumerate() {
-			match manhattan(goal[*cell], (x, y)) {
+			match distance_fn(goal[*cell], (x, y)) {
 				0 => print!("\x1B[104m"),
 				1 => print!("\x1B[106m"),
 				2 => print!("\x1B[102m"),
@@ -199,13 +206,14 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>, goal: &Vec<(u
 		}
 		println!("\x1B[0m");
 	}
-	println!("{}     \x1B[1m{}\x1B[0m", "    ".repeat(puzzle.len()), compute_distance(puzzle, goal));
+	println!("{}     \x1B[1m{}\x1B[0m", "    ".repeat(puzzle.len()), compute_distance(puzzle, goal, distance_fn));
 	println!("");
 
 	pos
 }
 
-fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>, goal: &Vec<(usize, usize)>) {
+fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>,
+				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) {
 	let mut curr: Option<Rc<Puzzle>> = Some(final_state);
 	let mut path = Vec::<Rc<Puzzle>>::new();
 
@@ -220,31 +228,34 @@ fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>, goa
 			0 => println!("initial state"),
 			n => println!("step {}:", n)
 		}
-		previous = print_puzzle(&(*state), previous, &goal);
+		previous = print_puzzle(&(*state), previous, &goal, distance_fn);
 	}
 	println!("Number of moves                       : {}", path.len() - 1);
 }
 
-fn solve(puzzle: Puzzle) {
+fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 	println!("Solving...");
 
 	let goal = build_spiral(puzzle.len());
 
-	if compute_distance(&puzzle, &goal) % 2 == 1 {
-		println!("[ Impossible puzzle ]");
-		return ;
-	}
+	// if compute_distance(&puzzle, &goal, manhattan) % 2 == 1 { // Does not work (always possible)
+	// 	println!("predict: \x1B[1;91mimpossible\x1B[0m");
+	// } else {
+	// 	println!("predict: \x1B[1;92mpossible\x1B[0m");
+	// }
+	// return ;
 
 	let mut heap: BinaryHeap<Rc<State>> = BinaryHeap::new();
 	let mut vis: HashMap<Rc<Puzzle>, Rc<State>> = HashMap::new();
 
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
+	let mut moves_skipped: usize = 0;
 
 	let start = Rc::new(State {
 		previous: None,
 		cost: 0,
-		distance: compute_distance(&puzzle, &goal),
+		distance: compute_distance(&puzzle, &goal, distance_fn),
 		pos: find_empty(&puzzle),
 		puzzle: Rc::new(puzzle)
 	});
@@ -254,19 +265,20 @@ fn solve(puzzle: Puzzle) {
 	while let Some(state) = heap.pop() {
 		// Check if it was not replaced
 		if state.cost > (*vis.get(&state.puzzle).unwrap()).cost {
+			moves_skipped += 1;
 			continue ;
 		}
 
 		// Final state
 		if state.distance == 0 {
-			println!("[ Solution found ]");
-			reconstruct(vis, (*state).puzzle.clone(), &goal);
-			println!("Maximum number of simultaneous states : {}", max_states);
+			reconstruct(vis, (*state).puzzle.clone(), &goal, distance_fn);
 			println!("Number of moves evaluated             : {}", moves_evaluated);
+			println!("Number of moves skipped               : {}", moves_skipped);
+			println!("Maximum number of simultaneous states : {}", max_states);
 			return ;
 		}
 
-		for next in expand(state, &goal) {
+		for next in expand(state, &goal, distance_fn) {
 			if vis.contains_key(&next.puzzle) && next.cost >= (*vis.get(&next.puzzle).unwrap()).cost {
 				continue ;
 			}
@@ -277,20 +289,57 @@ fn solve(puzzle: Puzzle) {
 			heap.push(rc_next);
 		}
 
-		moves_evaluated += 1;
 		max_states = max_states.max(heap.len());
+		moves_evaluated += 1;
 	}
 
-	println!("[ No solution found ]");
+	println!("\x1B[1;91mNo solution found\x1B[0m");
 }
 
-fn n_puzzle(filename: String) {
+fn n_puzzle(filename: String, distance_fn: DistanceFn) {
 	let puzzle = parse(filename);
-	solve(puzzle);
+	solve(puzzle, distance_fn);
 }
 
+fn help(error: &str) {
+	println!("\x1B[91mError\x1B[0m: {error}");
+	println!("Flags:");
+	println!("  --euclidean, -e         use euclidean distance (default)");
+	println!("  --out_of_place, -o      use out_of_place distance");
+	println!("  --manhattan, -m         use manhattan distance");
+	println!("Usage: n-puzzle [Flags] [Files]");
+	std::process::exit(1);
+}
+
+// TODO stange bonus
+// TODO optimize
 fn main() {
-	for arg in env::args().skip(1) {
-		n_puzzle(arg)
+	let args = env::args().skip(1);
+	let (flags, files): (Vec<String>, Vec<String>) = args.partition(|arg| arg.starts_with("-"));
+	let mut distance_fn: DistanceFn = euclidean;
+
+	for flag in flags {
+		match flag.as_str() {
+			"--euclidean" | "-e" => {
+				distance_fn = euclidean;
+			},
+			"--out_of_place" | "-o" => {
+				distance_fn = out_of_place;
+			},
+			"--manhattan" | "-m" => {
+				distance_fn = manhattan;
+			}
+			_ => {
+				help("Flag not supported");
+			}
+		}
+	}
+
+
+	if files.len() < 1 {
+		help("Should at least contain one file");
+	}
+	for file in files {
+		n_puzzle(file, distance_fn);
 	}
 }
