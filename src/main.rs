@@ -28,6 +28,15 @@ impl PartialOrd for State {
     }
 }
 
+#[inline]
+fn abs_diff(a: usize, b: usize) -> usize {
+	if a > b {
+		a - b
+	} else {
+		b - a
+	}
+}
+
 fn manhattan(target: (usize, usize), pos: (usize, usize)) -> usize {
 	abs_diff(target.0, pos.0) + abs_diff(target.1, pos.1)
 }
@@ -35,9 +44,10 @@ fn out_of_place(target: (usize, usize), pos: (usize, usize)) -> usize {
 	if target == pos { 0 } else { 4 }
 }
 fn euclidean(target: (usize, usize), pos: (usize, usize)) -> usize {
-	(abs_diff(target.0, pos.0) << 1) + (abs_diff(target.1, pos.1) << 1)
+	abs_diff(target.0, pos.0).pow(2) + abs_diff(target.1, pos.1).pow(2)
 }
 
+#[inline]
 fn compute_distance(puzzle: &Puzzle, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> usize {
 	let mut dist: usize = 0;
 
@@ -51,6 +61,7 @@ fn compute_distance(puzzle: &Puzzle, goal: &Vec<(usize, usize)>, distance_fn: Di
 	dist
 }
 
+#[inline]
 fn find_empty(puzzle: &Puzzle) -> (usize, usize) {
 	for (y, row) in puzzle.iter().enumerate() {
 		for (x, cell) in row.iter().enumerate() {
@@ -89,14 +100,6 @@ fn parse(filename: String) -> Puzzle {
 	}
 
 	vec
-}
-
-fn abs_diff(a: usize, b: usize) -> usize {
-	if a > b {
-		a - b
-	} else {
-		b - a
-	}
 }
 
 fn build_spiral(n: usize) -> Vec<(usize, usize)> {
@@ -140,6 +143,7 @@ fn build_spiral(n: usize) -> Vec<(usize, usize)> {
 // - Number of moves to solve the puzzle
 // - The sequence of states to solve the puzzle
 
+#[inline]
 fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Vec<State> {
 	let mut possibles_states = Vec::new();
 	let size = (*state).puzzle.len();
@@ -176,6 +180,7 @@ fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn)
 	possibles_states
 }
 
+#[inline]
 fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>,
 				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Option<(usize, usize)> {
 	let mut pos: Option<(usize, usize)> = None;
