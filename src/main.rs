@@ -146,40 +146,6 @@ fn build_spiral(n: usize) -> Vec<(usize, usize)> {
 // - The sequence of states to solve the puzzle
 
 #[inline]
-fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Vec<State> {
-	let mut possibles_states = Vec::with_capacity(4);
-	let size = (*state).puzzle.len();
-
-	let mut add_state = |ox: isize, oy: isize| {
-		let x = (*state).pos.0 as isize + ox;
-		let y = (*state).pos.1 as isize + oy;
-
-		if (x < 0) || (y < 0) || (x >= size as isize) || (y >= size as isize) {
-			return ;
-		}
-
-		let mut new_puzzle = (*state.puzzle).clone();
-		new_puzzle[(*state).pos.1][(*state).pos.0] = new_puzzle[y as usize][x as usize];
-		new_puzzle[y as usize][x as usize] = 0;
-
-		possibles_states.push(State {
-			previous: Some(Rc::clone(&(*state).puzzle)),
-			cost: (*state).cost + 1,
-			distance: compute_distance(&new_puzzle, goal, distance_fn),
-			pos: (x as usize, y as usize),
-			puzzle: Rc::new(new_puzzle)
-		});
-	};
-
-	add_state(-1,  0);
-	add_state( 1,  0);
-	add_state( 0, -1);
-	add_state( 0,  1);
-
-	possibles_states
-}
-
-#[inline]
 fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>,
 				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Option<(usize, usize)> {
 	let mut pos: Option<(usize, usize)> = None;
@@ -240,7 +206,8 @@ fn reconstruct(map: FxHashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>,
 fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 	println!("Solving...");
 
-	let goal = build_spiral(puzzle.len());
+	let size = puzzle.len();
+	let goal = build_spiral(size);
 
 	// if compute_distance(&puzzle, &goal, manhattan) % 2 == 1 { // Does not work (always possible)
 	// 	println!("predict: \x1B[1;91mimpossible\x1B[0m");
@@ -282,17 +249,44 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 			return ;
 		}
 
-		// Neighbours state
-		for next in expand(state, &goal, distance_fn) {
-			if vis.contains_key(&next.puzzle) && next.cost >= (*vis.get(&next.puzzle).unwrap()).cost {
-				continue ;
+		// Add neighbours states
+		let mut add_state = |ox: isize, oy: isize| {
+			let x = (*state).pos.0 as isize + ox;
+			let y = (*state).pos.1 as isize + oy;
+
+			// Check if the empty cell does not end up outside of the board
+			if (x < 0) || (y < 0) || (x >= size as isize) || (y >= size as isize) {
+				return ;
 			}
 
-			let rc_next = Rc::new(next);
+			// Generate the new puzzle by swapping the two value
+			let mut new_puzzle = (*state.puzzle).clone();
+			new_puzzle[(*state).pos.1][(*state).pos.0] = new_puzzle[y as usize][x as usize];
+			new_puzzle[y as usize][x as usize] = 0;
+			let new_puzzle = Rc::new(new_puzzle);
 
-			vis.insert(rc_next.puzzle.clone(), rc_next.clone());
-			heap.push(rc_next);
-		}
+			let new_cost = (*state).cost + 1;
+
+			if vis.contains_key(&new_puzzle) && new_cost >= (*vis.get(&new_puzzle).unwrap()).cost {
+				return ;
+			}
+
+			let next = Rc::new(State {
+				previous: Some(Rc::clone(&(*state).puzzle)),
+				cost: (*state).cost + 1,
+				distance: compute_distance(&new_puzzle, &goal, distance_fn),
+				pos: (x as usize, y as usize),
+				puzzle: new_puzzle
+			});
+
+			vis.insert(next.puzzle.clone(), next.clone());
+			heap.push(next);
+		};
+
+		add_state(-1,  0);
+		add_state( 1,  0);
+		add_state( 0, -1);
+		add_state( 0,  1);
 
 		max_states = max_states.max(heap.len());
 		moves_evaluated += 1;
@@ -320,8 +314,6 @@ fn help(error: &str) {
 // TODO optimize
 //  - https://en.wikipedia.org/wiki/Bidirectional_search
 //  - pruning ?
-//  - TODO remove expand because it create heap allocation with Vec
-
 
 
 //   - new algo (inspired from 'iterative deepening depth first search')
