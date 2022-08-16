@@ -5,3 +5,13 @@ edition = "2021"
 
 [profile.dev]
 opt-level = 3
+
+[profile.release]
+lto = true
+panic = "abort"
+overflow-checks = false
+strip = true
+codegen-units = 1
+
+[dependencies]
+rustc-hash = "1.1.0"

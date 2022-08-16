@@ -1,15 +1,17 @@
 #![feature(binary_heap_retain)]
+
+use rustc_hash::FxHashMap;
+
 use std::{env, fs};
 use std::rc::Rc;
 use std::collections::BinaryHeap;
-use std::collections::HashMap;
 use std::cmp::Ordering;
 
 type DistanceFn = fn((usize, usize), (usize, usize)) -> usize;
 
 type Puzzle = Vec<Vec<usize>>;
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq)]
 struct State {
 	puzzle: Rc<Puzzle>,
 	previous: Option<Rc<Puzzle>>,
@@ -145,17 +147,14 @@ fn build_spiral(n: usize) -> Vec<(usize, usize)> {
 
 #[inline]
 fn expand(state: Rc<State>, goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Vec<State> {
-	let mut possibles_states = Vec::new();
+	let mut possibles_states = Vec::with_capacity(4);
 	let size = (*state).puzzle.len();
 
 	let mut add_state = |ox: isize, oy: isize| {
 		let x = (*state).pos.0 as isize + ox;
 		let y = (*state).pos.1 as isize + oy;
 
-		if     (x < 0)
-			|| (y < 0)
-			|| (x >= size as isize)
-			|| (y >= size as isize) {
+		if (x < 0) || (y < 0) || (x >= size as isize) || (y >= size as isize) {
 			return ;
 		}
 
@@ -217,7 +216,7 @@ fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>,
 	pos
 }
 
-fn reconstruct(map: HashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>,
+fn reconstruct(map: FxHashMap<Rc<Puzzle>, Rc<State>>, final_state: Rc<Puzzle>,
 				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) {
 	let mut curr: Option<Rc<Puzzle>> = Some(final_state);
 	let mut path = Vec::<Rc<Puzzle>>::new();
@@ -251,7 +250,7 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 	// return ;
 
 	let mut heap: BinaryHeap<Rc<State>> = BinaryHeap::new();
-	let mut vis: HashMap<Rc<Puzzle>, Rc<State>> = HashMap::new();
+	let mut vis: FxHashMap<Rc<Puzzle>, Rc<State>> = FxHashMap::default();
 
 	let mut max_states: usize = 0;
 	let mut moves_evaluated: usize = 0;
@@ -283,6 +282,7 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 			return ;
 		}
 
+		// Neighbours state
 		for next in expand(state, &goal, distance_fn) {
 			if vis.contains_key(&next.puzzle) && next.cost >= (*vis.get(&next.puzzle).unwrap()).cost {
 				continue ;
@@ -318,6 +318,15 @@ fn help(error: &str) {
 
 // TODO stange bonus
 // TODO optimize
+//  - https://en.wikipedia.org/wiki/Bidirectional_search
+//  - pruning ?
+//  - TODO remove expand because it create heap allocation with Vec
+
+
+
+//   - new algo (inspired from 'iterative deepening depth first search')
+// take the closest to the goal in opened set
+// then add every child within a variable depth (ex: 4) to the opened set
 fn main() {
 	let args = env::args().skip(1);
 	let (flags, files): (Vec<String>, Vec<String>) = args.partition(|arg| arg.starts_with("-"));
