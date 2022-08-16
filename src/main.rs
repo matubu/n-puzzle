@@ -136,14 +136,6 @@ fn build_spiral(n: usize) -> Vec<(usize, usize)> {
     ret
 }
 
-// - If puzzle is unsolvable -> inform the user and exit
-
-// - Total number of states ever selected in the "opened" set (complexity in time)
-// - Maximum number of states ever represented in memory at the same time
-// during the search (complexity in size)
-// - Number of moves to solve the puzzle
-// - The sequence of states to solve the puzzle
-
 #[inline]
 fn print_puzzle(puzzle: &Puzzle, previous: Option<(usize, usize)>,
 				goal: &Vec<(usize, usize)>, distance_fn: DistanceFn) -> Option<(usize, usize)> {
