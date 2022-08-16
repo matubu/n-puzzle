@@ -97,7 +97,6 @@ fn parse(filename: String) -> Puzzle {
 		assert!(line.len() == size);
 		for x in line {
 			assert!(*x < (size * size));
-			// TODO assert no duplicate
 		}
 	}
 
@@ -251,18 +250,19 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 
 		// Add neighbours states
 		let mut add_state = |ox: isize, oy: isize| {
-			let x = (*state).pos.0 as isize + ox;
-			let y = (*state).pos.1 as isize + oy;
+			let new_x = (*state).pos.0 as isize + ox;
+			let new_y = (*state).pos.1 as isize + oy;
 
 			// Check if the empty cell does not end up outside of the board
-			if (x < 0) || (y < 0) || (x >= size as isize) || (y >= size as isize) {
+			if (new_x < 0) || (new_y < 0)
+				|| (new_x >= size as isize) || (new_y >= size as isize) {
 				return ;
 			}
 
 			// Generate the new puzzle by swapping the two value
 			let mut new_puzzle = (*state.puzzle).clone();
-			new_puzzle[(*state).pos.1][(*state).pos.0] = new_puzzle[y as usize][x as usize];
-			new_puzzle[y as usize][x as usize] = 0;
+			new_puzzle[(*state).pos.1][(*state).pos.0] = new_puzzle[new_y as usize][new_x as usize];
+			new_puzzle[new_y as usize][new_x as usize] = 0;
 			let new_puzzle = Rc::new(new_puzzle);
 
 			let new_cost = (*state).cost + 1;
@@ -273,9 +273,9 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 
 			let next = Rc::new(State {
 				previous: Some(Rc::clone(&(*state).puzzle)),
-				cost: (*state).cost + 1,
+				cost: new_cost,
 				distance: compute_distance(&new_puzzle, &goal, distance_fn),
-				pos: (x as usize, y as usize),
+				pos: (new_x as usize, new_y as usize),
 				puzzle: new_puzzle
 			});
 
@@ -310,15 +310,6 @@ fn help(error: &str) {
 	std::process::exit(1);
 }
 
-// TODO stange bonus
-// TODO optimize
-//  - https://en.wikipedia.org/wiki/Bidirectional_search
-//  - pruning ?
-
-
-//   - new algo (inspired from 'iterative deepening depth first search')
-// take the closest to the goal in opened set
-// then add every child within a variable depth (ex: 4) to the opened set
 fn main() {
 	let args = env::args().skip(1);
 	let (flags, files): (Vec<String>, Vec<String>) = args.partition(|arg| arg.starts_with("-"));
