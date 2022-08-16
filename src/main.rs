@@ -200,13 +200,6 @@ fn solve(puzzle: Puzzle, distance_fn: DistanceFn) {
 	let size = puzzle.len();
 	let goal = build_spiral(size);
 
-	// if compute_distance(&puzzle, &goal, manhattan) % 2 == 1 { // Does not work (always possible)
-	// 	println!("predict: \x1B[1;91mimpossible\x1B[0m");
-	// } else {
-	// 	println!("predict: \x1B[1;92mpossible\x1B[0m");
-	// }
-	// return ;
-
 	let mut heap: BinaryHeap<Rc<State>> = BinaryHeap::new();
 	let mut vis: FxHashMap<Rc<Puzzle>, Rc<State>> = FxHashMap::default();
 
